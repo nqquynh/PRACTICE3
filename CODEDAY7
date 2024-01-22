@@ -1,0 +1,51 @@
+--LINK 1
+SELECT Name
+    FROM STUDENTS
+WHERE Marks > 75
+ORDER BY RIGHT(Name,3), ID;
+--LINK 2
+SELECT user_id, CONCAT(UPPER(LEFT(name,1)), LOWER(SUBSTRING(name FROM 2 FOR LENGTH(name) -1))) AS name
+  FROM Users
+--LINK 3
+SELECT manufacturer,
+'$'|| CEILING(SUM(total_sales)/1000000) ||' '|| 'million' AS sale
+FROM pharmacy_sales
+GROUP BY manufacturer
+ORDER BY SUM(total_sales) DESC, manufacturer;
+--LINK 4
+SELECT EXTRACT(month FROM submit_date) AS mth,
+product_id AS product,
+ ROUND(AVG(stars),2) AS avg_stars
+FROM reviews
+GROUP BY product_id, mth
+ORDER BY mth, product_id;
+--LINK 5
+SELECT sender_id,
+COUNT(content) AS message_count
+FROM messages
+GROUP BY sender_id
+ORDER BY message_count DESC
+LIMIT 2;
+--LINK 6
+SELECT tweet_id
+FROM Tweets
+WHERE LENGTH(content) > 15;
+--LINK 7
+SELECT activity_date AS day,
+COUNT( DISTINCT user_id) AS active_users 
+FROM Activity
+WHERE activity_date BETWEEN '2019-06-27' AND '2019-07-27' 
+GROUP BY activity_date ;
+--LINK 8
+select COUNT(id)
+from employees
+WHERE EXTRACT(month FROM joining_date) BETWEEN 1 AND 7 and 
+EXTRACT(year FROM joining_date) = 2022;
+--LINK 9
+select POSITION('a' IN first_name) 
+from worker
+WHERE first_name ='Amitah';
+--LINK 10
+select SUBSTRING(title FROM LENGTH(winery)+2 FOR 4) as year
+from winemag_p2
+WHERE country ='Macedonia';
