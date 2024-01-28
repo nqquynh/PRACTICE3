@@ -52,3 +52,93 @@ ON a.page_id=b.page_id
 GROUP BY a.page_id
 HAVING COUNT(liked_date)=0
 ORDER BY a.page_id;
+--MIDTERM
+--Topic: DISTINCT
+-- Tạo danh sách replacement costs khác nhau của các film.
+SELECT DISTINCT replacement_cost FROM film
+ORDER BY replacement_cost
+--Topic: CASE + GROUP BY
+/*Viết một truy vấn cung cấp cái nhìn tổng quan 
+về số lượng phim có chi phí thay thế trong các 
+phạm vi chi phí sau
+1.	low: 9.99 - 19.99
+2.	medium: 20.00 - 24.99
+3.	high: 25.00 - 29.99
+Có bao nhiêu phim có chi phí thay thế thuộc nhóm “low”?
+*/
+SELECT SUM(CASE WHEN replacement_cost>=9.99 AND replacement_cost<=19.99
+		THEN 1 ELSE 0 END) AS low,
+		SUM(CASE WHEN replacement_cost>=20.00 AND replacement_cost<=24.99
+		THEN 1 ELSE 0 END) AS medium,
+		SUM(CASE WHEN replacement_cost>=25.00 AND replacement_cost<=29.99
+		THEN 1 ELSE 0 END) AS high
+FROM film
+/*Topic: JOIN
+danh sách các film_title:
+(title), (length),(category_name) 
+ độ dài giảm dần. Lọc kết quả để chỉ các
+phim trong danh mục 'Drama' hoặc 'Sports'.
+Question: Phim dài nhất thuộc thể loại nào và dài bao nhiêu?*/
+SELECT a.title, a.length,c.name
+FROM public.film as a 
+INNER JOIN public.film_category as b 
+ON a.film_id=b.film_id
+INNER JOIN public.category as c 
+ON b.category_id=c.category_id
+WHERE c.name IN ('Drama','Sports')
+ORDER BY a.length DESC
+/*Đưa ra cái nhìn tổng quan về số lượng phim (tilte)
+trong mỗi danh mục (category).
+Question:Thể loại danh mục nào là phổ biến nhất 
+trong số các bộ phim?*/
+SELECT COUNT(DISTINCT a.title), c.name
+FROM  public.film as a 
+INNER JOIN public.film_category as b 
+ON a.film_id=b.film_id
+INNER JOIN public.category as c 
+ON b.category_id=c.category_id
+GROUP BY c.name
+ORDER BY COUNT(DISTINCT a.title) DESC
+/*Đưa ra cái nhìn tổng quan về họ và tên của các
+diễn viên cũng như số lượng phim họ tham gia*/
+SELECT b.first_name||' '||b.last_name as hoten,
+COUNT(c.title) as soluong
+FROM public.film_actor AS a 
+INNER JOIN public.actor AS b 
+ON a.actor_id=b.actor_id
+GROUP BY b.actor_id
+ORDER BY COUNT(c.title) DESC
+/*Tìm các địa chỉ không liên quan đến bất kỳ khách hàng nào.*/
+SELECT COUNT(a.address_id) AS YEUCAU
+FROM public.address AS a 
+LEFT JOIN public.customer AS b 
+ON a.address_id=b.address_id
+WHERE b.customer_id is null
+/*Danh sách các thành phố và doanh thu tương ừng
+trên từng thành phố*/
+SELECT d.city, SUM(a.amount) as doanhthu
+FROM payment as a 
+INNER JOIN public.customer AS b
+ON a.customer_id=b.customer_id
+INNER JOIN public.address as c 
+ON b.address_id=c.address_id
+INNER JOIN public.city AS d 
+ON c.city_id=d.city_id
+GROUP BY d.city
+ORDER BY SUM(a.amount) DESC
+/*Tạo danh sách trả ra 2 cột dữ liệu: 
+-	cột 1: thông tin thành phố và đất nước 
+( format: “city, country")
+-	cột 2: doanh thu tương ứng với cột 1*/
+SELECT d.city||', '||e.country AS city, SUM(a.amount) as doanhthu
+FROM payment as a 
+INNER JOIN public.customer AS b
+ON a.customer_id=b.customer_id
+INNER JOIN public.address as c 
+ON b.address_id=c.address_id
+INNER JOIN public.city AS d 
+ON c.city_id=d.city_id
+INNER JOIN public.country AS e
+ON d.country_id=e.country_id
+GROUP BY d.city||', '||e.country
+ORDER BY  SUM(a.amount)
