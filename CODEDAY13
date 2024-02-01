@@ -1,0 +1,155 @@
+--LINK1
+SELECT COUNT(DISTINCT a.company_id) AS duplicate_companies 
+FROM job_listings AS a
+INNER JOIN
+(SELECT title, description, company_id, COUNT(*)
+FROM job_listings
+GROUP BY title, description, company_id
+HAVING COUNT(*)>1) AS b
+ON a.company_id=b.company_id
+--LINK2
+WITH max_app
+AS(
+SELECT category, product, SUM(spend) as total_spend
+FROM product_spend
+WHERE EXTRACT(year from transaction_date) ='2022'
+AND category='appliance'
+GROUP BY category, product
+ORDER BY total_spend DESC
+LIMIT 2),
+max_elec AS(
+SELECT category, product, SUM(spend) as total_spend
+FROM product_spend
+WHERE EXTRACT(year from transaction_date) ='2022'
+AND category='electronics'
+GROUP BY category, product
+ORDER BY total_spend DESC
+LIMIT 2)
+SELECT a.category, a.product, a.total_spend FROM max_app AS a 
+UNION ALL
+SELECT b.category, b.product, b.total_spend FROM max_elec AS b 
+
+--LINK 3
+SELECT COUNT(*) as member_count FROM
+(SELECT policy_holder_id, COUNT(*) 
+FROM callers
+GROUP BY policy_holder_id
+HAVING COUNT(*)>=3) as a
+--LINK4
+SELECT a.page_id FROM pages AS a
+LEFT JOIN page_likes AS b 
+ON a.page_id=b.page_id
+GROUP BY a.page_id
+HAVING COUNT(liked_date)=0
+ORDER BY a.page_id;
+--LINK5
+WITH user_6 AS (
+    SELECT
+        user_id,
+        EXTRACT(month FROM event_date) AS month,
+        COUNT(DISTINCT user_id) AS monthly_active_users
+    FROM user_actions
+    WHERE EXTRACT(month FROM event_date) = 6 AND event_type IN ('sign-in', 'like', 'comment')
+    GROUP BY user_id, EXTRACT(month FROM event_date)
+),
+user_7 AS (
+    SELECT
+        user_id,
+        EXTRACT(month FROM event_date) AS month,
+        COUNT(DISTINCT user_id) AS monthly_active_users
+    FROM user_actions
+    WHERE EXTRACT(month FROM event_date) = 7 AND EXTRACT(year FROM event_date) = 2022 AND event_type IN ('sign-in', 'like', 'comment')
+    GROUP BY user_id, EXTRACT(month FROM event_date)  
+)
+SELECT b.month, COUNT(b.monthly_active_users) AS monthly_active_users
+FROM user_6 AS a
+INNER JOIN user_7 AS b
+ON a.user_id = b.user_id AND a.month = 6 AND b.month = 7  
+GROUP BY b.month;
+--LINK6
+WITH number_trans
+AS(
+    SELECT id,country, LEFT(trans_date,7) AS month,
+    COUNT(*) as trans_count, SUM(amount) AS trans_total_amount 
+    FROM Transactions
+    GROUP BY country,  LEFT(trans_date,7)
+),
+number_app AS(
+    SELECT id,country, EXTRACT(month from trans_date) AS month,
+    COUNT(*) as approved_count, SUM(amount) AS approved_total_amount 
+    FROM Transactions
+    WHERE state ='approved '
+    GROUP BY country,  EXTRACT(month from trans_date)
+)
+SELECT a.month, a.country, a.trans_count,b.approved_count,
+a.trans_total_amount, b.approved_total_amount
+FROM number_trans AS a 
+LEFT JOIN number_app AS b ON a.id=b.id
+--LINK7
+SELECT MIN(year) AS first_year,
+product_id, quantity,  price FROM
+(SELECT
+    product_id,
+    year,
+    quantity,
+    price
+  FROM sales
+  ORDER BY product_id, year) AS arange
+  GROUP BY product_id
+--LINK 8
+SELECT customer_id
+FROM Customer 
+GROUP BY customer_id
+HAVING COUNT(DISTINCT product_key) = (SELECT COUNT(*) FROM Product);
+--LINK 9
+WITH cte AS(
+select employee_id FROM Employees
+WHERE manager_id not in (SELECT employee_id FROM Employees)),
+    cte1 AS(
+         select employee_id FROM Employees
+        WHERE salary<30000
+    )
+    SELECT a.employee_id FROM cte AS a INNER JOIN 
+    cte1 AS b ON a.employee_id=b.employee_id
+--LINK 10
+SELECT COUNT(DISTINCT a.company_id) AS duplicate_companies 
+FROM job_listings AS a
+INNER JOIN
+(SELECT title, description, company_id, COUNT(*)
+FROM job_listings
+GROUP BY title, description, company_id
+HAVING COUNT(*)>1) AS b
+ON a.company_id=b.company_id
+--LINK 11
+WITH person_rate AS (
+  SELECT a.user_id, b.name AS results 
+  FROM MovieRating AS a
+  INNER JOIN Users AS b ON a.user_id = b.user_id
+  GROUP BY a.user_id, b.name  
+  ORDER BY COUNT(*) DESC, b.name
+  LIMIT 1
+),
+movie_rate AS (
+  SELECT c.movie_id, d.title AS results
+  FROM MovieRating AS c
+  INNER JOIN Movies AS d ON c.movie_id = d.movie_id
+  WHERE c.created_at >= '2020-02-01' AND c.created_at < '2020-03-01'
+  GROUP BY c.movie_id, d.title  
+  ORDER BY AVG(rating) DESC, d.title
+  LIMIT 1
+)
+SELECT results FROM person_rate  
+UNION ALL
+SELECT results FROM movie_rate;  
+--LINK 12
+
+WITH cte AS(
+SELECT requester_id AS user_id FROM RequestAccepted
+UNION ALL
+SELECT accepter_id AS user_id FROM RequestAccepted
+)
+SELECT user_id as id, COUNT(*) AS num FROM cte 
+GROUP BY user_id 
+ORDER BY  COUNT(*) DESC
+LIMIT 1
+
