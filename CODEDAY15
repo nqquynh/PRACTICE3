@@ -1,0 +1,80 @@
+--LINK1
+SELECT EXTRACT(year FROM transaction_date) AS year,product_id,
+spend AS curr_year_spend,
+LAG(spend) OVER(PARTITION BY product_id ORDER BY EXTRACT(year FROM transaction_date)) AS prev_year_spend,
+ROUND((cast(spend/LAG(spend) OVER(PARTITION BY product_id ORDER BY EXTRACT(year FROM transaction_date)) as decimal)-1)*100,2) as yoy_rate
+FROM user_transactions
+--LINK2
+SELECT a.card_name, a.issued_amount FROM
+(SELECT card_name,SUM(issued_amount) AS issued_amount,issue_year,
+ROW_NUMBER() OVER(PARTITION BY card_name ORDER BY issue_year,issue_month	) AS stt                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+FROM monthly_cards_issued
+GROUP BY card_name,issue_month,issue_year) AS a
+WHERE stt=1
+ORDER BY a.issued_amount DESC;
+--LINK 3
+ SELECT a.user_id, a.spend, a.transaction_date FROM
+ (SELECT user_id, spend, transaction_date,
+ROW_NUMBER() OVER(PARTITION BY user_id ORDER BY transaction_date) AS stt
+FROM transactions) AS a
+WHERE a.stt=3;
+--LINK4
+SELECT a.transaction_date,a.user_id,a.purchase_count from
+(SELECT ROW_NUMBER() OVER(PARTITION BY user_id ORDER BY transaction_date DESC) AS stt,
+transaction_date,
+user_id, COUNT(*) as purchase_count
+FROM user_transactions
+GROUP BY transaction_date, user_id) AS a
+WHERE a.stt=1
+ORDER BY a.transaction_date;
+--LINK5
+WITH cte as
+(SELECT *,
+LAG(tweet_count) OVER(PARTITION BY user_id ORDER BY tweet_date) AS n1,
+LAG(tweet_count,2) OVER(PARTITION BY user_id ORDER BY tweet_date) AS n2
+FROM tweets)
+
+SELECT user_id, tweet_date,
+CASE WHEN n1 is null AND n2 is null THEN round(cast(tweet_count as decimal)/1,2)
+ WHEN n2 is null and n1 IS NOT NULL THEN round(cast((tweet_count+n1) as decimal)/2,2)
+ ELSE round(cast((tweet_count+n1+n2) as decimal)/3,2)
+END AS rolling_avg_3d
+from cte
+;
+
+--LINK6
+SELECT COUNT(a.merchant_id) AS payment_count FROM
+(
+SELECT *,
+EXTRACT(EPOCH FROM LEAD(transaction_timestamp) OVER(PARTITION BY merchant_id,credit_card_id,amount 
+ORDER BY transaction_timestamp)-transaction_timestamp)/60 as diff
+FROM transactions) AS a
+WHERE a.diff<=10;
+--LINK7
+SELECT b.category, b.product, b.total as total_spend FROM
+(SELECT a.category, a.product, a.total1 as total,
+ROW_NUMBER() OVER(PARTITION BY category ORDER BY a.total1 DESC) AS rank1
+FROM
+(SELECT
+category, product, SUM(spend) AS total1,
+ROW_NUMBER() OVER(PARTITION BY category,product ORDER BY SUM(spend) DESC) AS stt
+FROM product_spend
+WHERE EXTRACT(YEAR FROM transaction_date) = 2022
+GROUP BY category, product) AS a
+WHERE a.stt=1) as b
+WHERE b.rank1<=2
+--LINK8
+
+WITH cte AS (
+    SELECT c.artist_name,
+           DENSE_RANK() OVER(ORDER BY COUNT(b.song_id) DESC) AS artist_rank
+    FROM global_song_rank AS a
+    JOIN songs AS b ON a.song_id = b.song_id
+    JOIN artists AS c ON c.artist_id=b.artist_id
+    WHERE a.rank <= 10
+    GROUP BY c.artist_name
+)
+SELECT artist_name, artist_rank
+FROM cte 
+WHERE artist_rank <=5
+;
