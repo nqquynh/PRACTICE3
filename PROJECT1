@@ -1,0 +1,114 @@
+SELECT * FROM public.sales_dataset_rfm_prj
+WHERE quantityordered='QUANTITYORDERED';
+--Chuyển đổi kiểu dữ liệu phù hợp cho các trường ( sử dụng câu lệnh ALTER)
+DELETE FROM sales_dataset_rfm_prj 
+WHERE quantityordered='QUANTITYORDERED';
+ALTER TABLE public.sales_dataset_rfm_prj 
+ALTER COLUMN orderdate TYPE timestamp USING (trim(orderdate)::timestamp);
+/*Check NULL/BLANK (‘’)  ở các trường: ORDERNUMBER, QUANTITYORDERED, PRICEEACH, ORDERLINENUMBER, 
+SALES, ORDERDATE.*/
+SELECT * FROM public.sales_dataset_rfm_prj
+WHERE orderdate IS NULL
+/*Thêm cột CONTACTLASTNAME, CONTACTFIRSTNAME được tách ra từ CONTACTFULLNAME*/
+ALTER TABLE sales_dataset_rfm_prj
+ADD COLUMN CONTACTLASTNAME VARCHAR(20),
+ADD COLUMN CONTACTFIRSTNAME VARCHAR(20);
+
+INSERT INTO  sales_dataset_rfm_prj(CONTACTFIRSTNAME,CONTACTLASTNAME)
+VALUE(LEFT(contactfullname,POSITION('-' IN contactfullname)-1),
+RIGHT(contactfullname,LENGTH(contactfullname)-POSITION('-' IN contactfullname)))
+UPDATE sales_dataset_rfm_prj
+SET CONTACTLASTNAME=RIGHT(contactfullname,LENGTH(contactfullname)-POSITION('-' IN contactfullname))
+SET CONTACTFIRSTNAME=LEFT(contactfullname,POSITION('-' IN contactfullname)-1)
+/*Chuẩn hóa CONTACTLASTNAME, CONTACTFIRSTNAME theo định dạng chữ cái đầu tiên viết hoa, chữ cái tiếp theo viết thường. 
+*/
+UPDATE sales_dataset_rfm_prj
+SET CONTACTFIRSTNAME=UPPER(LEFT(CONTACTFIRSTNAME,1))||RIGHT(CONTACTFIRSTNAME,LENGTH(CONTACTFIRSTNAME)-1)
+SET CONTACTLASTNAME=UPPER(LEFT(CONTACTLASTNAME,1))||RIGHT(CONTACTLASTNAME,LENGTH(CONTACTLASTNAME)-1)
+/*Thêm cột QTR_ID, MONTH_ID, YEAR_ID lần lượt là Qúy, tháng, năm được lấy ra từ ORDERDATE*/
+ALTER TABLE sales_dataset_rfm_prj
+ADD COLUMN QTR_ID INTEGER,
+ADD COLUMN MONTH_ID INTEGER,
+ADD COLUMN YEAR_ID INTEGER;
+
+UPDATE sales_dataset_rfm_prj
+SET QTR_ID = 4
+WHERE EXTRACT(MONTH FROM orderdate) IN (10, 11, 12)
+;
+--Cách 2
+update sales_dataset_rfm_prj
+set QTR_ID  = EXTRACT(QUARTER FROM  orderdate);
+update sales_dataset_rfm_prj
+--Cách 3
+UPDATE sales_dataset_rfm_prj
+SET QTR_ID= 
+Case when EXTRACT(MONTH FROM orderdate) IN (10,11,12) then 4
+when EXTRACT(MONTH FROM orderdate) IN (7,8,9) then 3
+when EXTRACT(MONTH FROM orderdate) IN (4,5,6) then 2
+else 1
+end 
+
+UPDATE sales_dataset_rfm_prj
+SET MONTH_ID = EXTRACT(MONTH FROM orderdate)
+
+UPDATE sales_dataset_rfm_prj
+SET YEAR_ID = EXTRACT(YEAR FROM orderdate)
+/*Hãy tìm outlier (nếu có) cho cột QUANTITYORDERED và hãy chọn cách xử lý cho bản ghi đó (2 cách)
+( Không chạy câu lệnh trước khi bài được review)*/
+--CÁCH 1. Su dung IQR/boxplot tim ra outlier
+--B1:Q1,Q3,IQR
+--B2:Xác định Min=Q1-1.5IQR, Max=Q3+1.5IQR
+WITH twt_min_max_value as(
+SELECT Q1-1.5*IQR AS min_value, Q3+1.5*IQR AS max_value FROM
+(SELECT percentile_cont(0.25) WITHIN GROUP(ORDER BY QUANTITYORDERED) as Q1,
+percentile_cont(0.75) WITHIN GROUP(ORDER BY QUANTITYORDERED) as Q3,
+percentile_cont(0.75) WITHIN GROUP(ORDER BY QUANTITYORDERED)-percentile_cont(0.25) WITHIN GROUP(ORDER BY QUANTITYORDERED)
+AS IQR
+FROM public.sales_dataset_rfm_prj) AS a)
+--B3: Xác định outlier<min or >max
+
+SELECT * FROM public.sales_dataset_rfm_prj
+WHERE QUANTITYORDERED <(select min_value from twt_min_max_value)
+or QUANTITYORDERED >(select max_value from twt_min_max_value)
+--xử lí cách 1
+UPDATE public.sales_dataset_rfm_prj
+SET QUANTITYORDERED=(SELECT AVG(QUANTITYORDERED) FROM public.sales_dataset_rfm_prj)
+WHERE QUANTITYORDERED IN(SELECT  QUANTITYORDERED FROM twt_outlier)
+--CACH 2. Sử dụng Z-score=(users-avg)/stddev
+SELECT AVG(quantityordered),
+stddev(quantityordered)
+FROM public.sales_dataset_rfm_prj
+with cte as(
+SELECT quantityordered,
+(SELECT AVG(quantityordered) FROM public.sales_dataset_rfm_prj) AS avg,
+(select stddev(quantityordered) FROM public.sales_dataset_rfm_prj) as stddev
+	from public.sales_dataset_rfm_prj
+), 
+outlier AS(
+select quantityordered, (quantityordered-avg)/stddev as z_score
+from cte
+where abs((quantityordered-avg)/stddev)>3)
+--Xử lí cách 1
+UPDATE public.sales_dataset_rfm_prj
+SET QUANTITYORDERED=(SELECT AVG(QUANTITYORDERED) FROM public.sales_dataset_rfm_prj)
+WHERE QUANTITYORDERED IN(SELECT  QUANTITYORDERED FROM outlier)
+--Xử lí cách 2
+
+--save vào new table SALES_DATASET_RFM_PRJ_CLEAN
+SELECT *
+INTO SALES_DATASET_RFM_PRJ_CLEAN
+FROM public.sales_dataset_rfm_prj;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
