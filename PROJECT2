@@ -1,0 +1,95 @@
+/*Số lượng đơn hàng và số lượng khách hàng mỗi tháng
+Thống kê tổng số lượng người mua và số lượng đơn hàng đã hoàn thành mỗi tháng ( Từ 1/2019-4/2022)
+Output: month_year ( yyyy-mm) , total_user, total_orde */
+SELECT COUNT(DISTINCT user_id) as total_user,
+COUNT(DISTINCT order_id) as total_order,
+month_year FROM
+(SELECT user_id, 
+order_id,
+FORMAT_TIMESTAMP('%Y-%m', created_at) AS month_year
+ FROM bigquery-public-data.thelook_ecommerce.order_items
+ WHERE created_at BETWEEN TIMESTAMP('2019-01-01') AND TIMESTAMP('2022-04-30'))
+ GROUP BY month_year
+ ORDER BY month_year
+ /*Thống kê giá trị đơn hàng trung bình và tổng số người dùng khác nhau mỗi tháng 
+ ( Từ 1/2019-4/2022)
+Output: month_year ( yyyy-mm), distinct_users, average_order_value
+giá trị đơn hàng trung bình = tổng giá trị đơn hàng trong tháng/số lượng đơn hàng*/
+SELECT month_year, count(distinct user_id) as distinct_users,
+SUM(sale_price)/COUNT(DISTINCT order_id) as average_order_value
+FROM
+(SELECT FORMAT_TIMESTAMP('%Y-%m', created_at) AS month_year,
+user_id, sale_price, order_id
+ FROM bigquery-public-data.thelook_ecommerce.order_items
+WHERE created_at BETWEEN TIMESTAMP('2019-01-01') AND TIMESTAMP('2022-04-30'))
+GROUP BY month_year
+ORDER BY month_year
+/*Tìm các khách hàng có trẻ tuổi nhất và lớn tuổi nhất theo từng giới tính ( Từ 1/2019-4/2022)
+Output: first_name, last_name, gender, age, tag (hiển thị youngest nếu trẻ tuổi nhất, oldest nếu lớn tuổi nhất)
+Hint: Sử dụng UNION các KH tuổi trẻ nhất với các KH tuổi trẻ nhất 
+tìm các KH tuổi trẻ nhất và gán tag ‘youngest’  
+tìm các KH tuổi trẻ nhất và gán tag ‘oldest’ 
+Insight là gì? (Trẻ nhất là bao nhiêu tuổi, số lượng bao nhiêu? Lớn nhất là bao nhiêu tuổi, số lượng bao nhiêu)*/
+WITH cte1 AS (
+SELECT first_name, last_name, gender, age,
+RANK() OVER (PARTITION BY gender ORDER BY age) AS min
+FROM bigquery-public-data.thelook_ecommerce.users
+WHERE created_at BETWEEN TIMESTAMP('2019-01-01') AND TIMESTAMP('2022-04-30')
+),
+cte2 AS (SELECT first_name, last_name, gender, age,
+RANK() OVER (PARTITION BY gender ORDER BY age DESC) AS max
+FROM bigquery-public-data.thelook_ecommerce.users
+WHERE created_at BETWEEN TIMESTAMP('2019-01-01') AND TIMESTAMP('2022-04-30')
+),
+cte3 as(
+SELECT *
+FROM (
+SELECT a.first_name, a.last_name, a.gender, a.age,
+CASE WHEN a.min = 1 THEN 'YOUNGEST' ELSE '' END AS tag
+FROM cte1 AS a
+UNION ALL
+SELECT b.first_name, b.last_name, b.gender, b.age,
+CASE WHEN b.max = 1 THEN 'OLDEST' ELSE '' END AS tag
+FROM cte2 AS b
+) AS t
+WHERE t.tag IN ('YOUNGEST', 'OLDEST'))
+SELECT tag,COUNT(*) FROM cte3
+GROUP BY tag
+-- youngest: 12 years old-1082 people, oldest: 70 years old-1053 people
+/*4.Top 5 sản phẩm mỗi tháng.
+Thống kê top 5 sản phẩm có lợi nhuận cao nhất từng tháng (xếp hạng cho từng sản phẩm). 
+Output: month_year ( yyyy-mm), product_id, product_name, sales, cost, profit, rank_per_month
+Hint: Sử dụng hàm dense_rank()*/
+WITH cte1 AS(
+SELECT t.month_year,t.product_id, t.product_name, t.cost,
+SUM(t.solg*t.product_retail_price) OVER(PARTITION BY t.month_year) as sales, 
+SUM(t.solg * (t.product_retail_price - t.cost)) OVER(PARTITION BY t.month_year) AS profit
+   FROM 
+(SELECT FORMAT_TIMESTAMP('%Y-%m', sold_at) AS month_year,
+product_id, product_name, product_retail_price,count(*) OVER(PARTITION BY product_id ORDER BY FORMAT_TIMESTAMP('%Y-%m', sold_at)) as solg, cost
+ FROM bigquery-public-data.thelook_ecommerce.inventory_items
+) as t),
+cte2 as(
+SELECT *, dense_rank() over(partition by cte1.month_year ORDER BY profit DESC) as rank_per_month
+FROM cte1)
+SELECT * FROM cte2
+where cte2.rank_per_month<=5
+/*5.Doanh thu tính đến thời điểm hiện tại trên mỗi danh mục
+Thống kê tổng doanh thu theo ngày của từng danh mục sản phẩm (category) trong 3 tháng qua ( giả sử ngày hiện tại là 15/4/2022)
+Output: dates (yyyy-mm-dd), product_categories, revenue
+*/
+SELECT date, product_category, SUM((product_retail_price-cost)*solg) AS revenue FROM
+(SELECT FORMAT_TIMESTAMP('%Y-%m-%d', sold_at) AS date, product_category,
+ count(*) OVER(PARTITION BY product_category,sold_at) as solg,
+  product_retail_price, cost
+ FROM bigquery-public-data.thelook_ecommerce.inventory_items
+ WHERE sold_at BETWEEN TIMESTAMP('2022-01-15') AND TIMESTAMP('2022-04-15'))
+GROUP BY date, product_category
+ORDER BY date
+
+
+
+
+
+
+
