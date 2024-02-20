@@ -1,0 +1,52 @@
+/*Bước 1: Khám phá và làm sạch dữ liệu 
+-Chúng ta đang quan tâm đến trường nào
+-Check null
+179976 bản ghi, 0 bản ghi null
+-chuyển đổi kiểu dl: không cần
+-số tiền và số lượng > 0 
+-Check dup: ko có*/
+
+SELECT * FROM
+(SELECT *, FORMAT_TIMESTAMP('%Y-%m', created_at) AS month_year, ROW_NUMBER() OVER(PARTITION BY id,order_id,user_id,product_id ORDER BY FORMAT_TIMESTAMP('%Y-%m', created_at)) AS stt
+FROM bigquery-public-data.thelook_ecommerce.order_items) AS t
+WHERE stt>2
+/*Bước 2: Tìm ngày mua hàng đầu tiên của mỗi khách hàng=> cohort_date
+- Tìm index bằng tháng(ngày mua hàng-ngày đầu tiên)+1
+- Count sl khách hàng hoặc tổng dthu tại mỗi cohort_date và index tương ứng
+*/
+with cte as(
+SELECT user_id,FORMAT_TIMESTAMP('%Y-%m', first_purchase) as cohort_date,
+ sale_price, 12*(EXTRACT(year FROM created_at)-EXTRACT(year FROM first_purchase))+
+ EXTRACT(month FROM created_at)-EXTRACT(month FROM first_purchase)+1
+  as index 
+FROM 
+(SELECT user_id,
+sale_price, created_at,
+MIN(created_at) OVER(PARTITION BY user_id) as first_purchase
+ FROM bigquery-public-data.thelook_ecommerce.order_items)),
+cte2 as(
+ SELECT cte.cohort_date, index,
+ COUNT(distinct user_id) as cnt,
+ SUM(sale_price) AS revenue
+ FROM cte
+  where index<5
+ GROUP BY cte.cohort_date, index),
+ 
+ 
+ 
+ /*Buoc 3. Pivot table=> cohort chart*/
+user_cohort AS(
+SELECT cohort_date,
+SUM(CASE WHEN index=1 then cnt else 0 end) as m1,
+SUM(CASE WHEN index=2 then cnt else 0 end) as m2,
+SUM(CASE WHEN index=3 then cnt else 0 end) as m3,
+SUM(CASE WHEN index=4 then cnt else 0 end) as m4 
+FROM cte2
+GROUP BY cohort_date)
+--retention_cohort 
+SELECT cohort_date,
+ROUND(100.00*m1/m1,2)||'%' as m1,
+ROUND(100.00*m2/m1,2)||'%' as m2,
+ROUND(100.00*m3/m1,2)||'%' as m3,
+ROUND(100.00*m4/m1,2)||'%' as m4
+FROM user_cohort
