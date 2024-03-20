@@ -1,0 +1,140 @@
+/*Số lượng đơn hàng và số lượng khách hàng mỗi tháng
+Thống kê tổng số lượng người mua và số lượng đơn hàng đã hoàn thành mỗi tháng ( Từ 1/2019-4/2022)
+Output: month_year ( yyyy-mm) , total_user, total_orde */
+SELECT COUNT(DISTINCT user_id) as total_user,
+COUNT(DISTINCT order_id) as total_order,
+month_year FROM
+(SELECT user_id, 
+order_id,
+FORMAT_TIMESTAMP('%Y-%m', created_at) AS month_year
+ FROM bigquery-public-data.thelook_ecommerce.order_items
+ WHERE created_at BETWEEN TIMESTAMP('2019-01-01') AND TIMESTAMP('2022-04-30'))
+ GROUP BY month_year
+ ORDER BY month_year
+ /*Thống kê giá trị đơn hàng trung bình và tổng số người dùng khác nhau mỗi tháng 
+ ( Từ 1/2019-4/2022)
+Output: month_year ( yyyy-mm), distinct_users, average_order_value
+giá trị đơn hàng trung bình = tổng giá trị đơn hàng trong tháng/số lượng đơn hàng*/
+SELECT month_year, count(distinct user_id) as distinct_users,
+SUM(sale_price)/COUNT(DISTINCT order_id) as average_order_value
+FROM
+(SELECT FORMAT_TIMESTAMP('%Y-%m', created_at) AS month_year,
+user_id, sale_price, order_id
+ FROM bigquery-public-data.thelook_ecommerce.order_items
+WHERE created_at BETWEEN TIMESTAMP('2019-01-01') AND TIMESTAMP('2022-04-30'))
+GROUP BY month_year
+ORDER BY month_year
+/*Tìm các khách hàng có trẻ tuổi nhất và lớn tuổi nhất theo từng giới tính ( Từ 1/2019-4/2022)
+Output: first_name, last_name, gender, age, tag (hiển thị youngest nếu trẻ tuổi nhất, oldest nếu lớn tuổi nhất)
+Hint: Sử dụng UNION các KH tuổi trẻ nhất với các KH tuổi trẻ nhất 
+tìm các KH tuổi trẻ nhất và gán tag ‘youngest’  
+tìm các KH tuổi trẻ nhất và gán tag ‘oldest’ 
+Insight là gì? (Trẻ nhất là bao nhiêu tuổi, số lượng bao nhiêu? Lớn nhất là bao nhiêu tuổi, số lượng bao nhiêu)*/
+WITH cte1 AS (
+SELECT first_name, last_name, gender, age,
+RANK() OVER (PARTITION BY gender ORDER BY age) AS min
+FROM bigquery-public-data.thelook_ecommerce.users
+WHERE created_at BETWEEN TIMESTAMP('2019-01-01') AND TIMESTAMP('2022-04-30')
+),
+cte2 AS (SELECT first_name, last_name, gender, age,
+RANK() OVER (PARTITION BY gender ORDER BY age DESC) AS max
+FROM bigquery-public-data.thelook_ecommerce.users
+WHERE created_at BETWEEN TIMESTAMP('2019-01-01') AND TIMESTAMP('2022-04-30')
+),
+cte3 as(
+SELECT *
+FROM (
+SELECT a.first_name, a.last_name, a.gender, a.age,
+CASE WHEN a.min = 1 THEN 'YOUNGEST' ELSE '' END AS tag
+FROM cte1 AS a
+UNION ALL
+SELECT b.first_name, b.last_name, b.gender, b.age,
+CASE WHEN b.max = 1 THEN 'OLDEST' ELSE '' END AS tag
+FROM cte2 AS b
+) AS t
+WHERE t.tag IN ('YOUNGEST', 'OLDEST'))
+SELECT tag,COUNT(*) FROM cte3
+GROUP BY tag
+-- youngest: 12 years old-1082 people, oldest: 70 years old-1053 people
+/*4.Top 5 sản phẩm mỗi tháng.
+Thống kê top 5 sản phẩm có lợi nhuận cao nhất từng tháng (xếp hạng cho từng sản phẩm). 
+Output: month_year ( yyyy-mm), product_id, product_name, sales, cost, profit, rank_per_month
+Hint: Sử dụng hàm dense_rank()*/
+WITH cte1 AS(
+SELECT t.month_year,t.product_id, t.product_name, t.cost,
+SUM(t.solg*t.product_retail_price) OVER(PARTITION BY t.month_year) as sales, 
+SUM(t.solg * (t.product_retail_price - t.cost)) OVER(PARTITION BY t.month_year) AS profit
+   FROM 
+(SELECT FORMAT_TIMESTAMP('%Y-%m', sold_at) AS month_year,
+product_id, product_name, product_retail_price,count(*) OVER(PARTITION BY product_id ORDER BY FORMAT_TIMESTAMP('%Y-%m', sold_at)) as solg, cost
+ FROM bigquery-public-data.thelook_ecommerce.inventory_items
+) as t),
+cte2 as(
+SELECT *, dense_rank() over(partition by cte1.month_year ORDER BY profit DESC) as rank_per_month
+FROM cte1)
+SELECT * FROM cte2
+where cte2.rank_per_month<=5
+/*5.Doanh thu tính đến thời điểm hiện tại trên mỗi danh mục
+Thống kê tổng doanh thu theo ngày của từng danh mục sản phẩm (category) trong 3 tháng qua ( giả sử ngày hiện tại là 15/4/2022)
+Output: dates (yyyy-mm-dd), product_categories, revenue
+*/
+SELECT date, product_category, SUM((product_retail_price-cost)*solg) AS revenue FROM
+(SELECT FORMAT_TIMESTAMP('%Y-%m-%d', sold_at) AS date, product_category,
+ count(*) OVER(PARTITION BY product_category,sold_at) as solg,
+  product_retail_price, cost
+ FROM bigquery-public-data.thelook_ecommerce.inventory_items
+ WHERE sold_at BETWEEN TIMESTAMP('2022-01-15') AND TIMESTAMP('2022-04-15'))
+GROUP BY date, product_category
+ORDER BY date
+/*Bước 1: Khám phá và làm sạch dữ liệu 
+-Chúng ta đang quan tâm đến trường nào
+-Check null
+179976 bản ghi, 0 bản ghi null
+-chuyển đổi kiểu dl: không cần
+-số tiền và số lượng > 0 
+-Check dup: ko có*/
+
+SELECT * FROM
+(SELECT *, FORMAT_TIMESTAMP('%Y-%m', created_at) AS month_year, ROW_NUMBER() OVER(PARTITION BY id,order_id,user_id,product_id ORDER BY FORMAT_TIMESTAMP('%Y-%m', created_at)) AS stt
+FROM bigquery-public-data.thelook_ecommerce.order_items) AS t
+WHERE stt>2
+/*Bước 2: Tìm ngày mua hàng đầu tiên của mỗi khách hàng=> cohort_date
+- Tìm index bằng tháng(ngày mua hàng-ngày đầu tiên)+1
+- Count sl khách hàng hoặc tổng dthu tại mỗi cohort_date và index tương ứng
+*/
+with cte as(
+SELECT user_id,FORMAT_TIMESTAMP('%Y-%m', first_purchase) as cohort_date,
+ sale_price, 12*(EXTRACT(year FROM created_at)-EXTRACT(year FROM first_purchase))+
+ EXTRACT(month FROM created_at)-EXTRACT(month FROM first_purchase)+1
+  as index 
+FROM 
+(SELECT user_id,
+sale_price, created_at,
+MIN(created_at) OVER(PARTITION BY user_id) as first_purchase
+ FROM bigquery-public-data.thelook_ecommerce.order_items)),
+cte2 as(
+ SELECT cte.cohort_date, index,
+ COUNT(distinct user_id) as cnt,
+ SUM(sale_price) AS revenue
+ FROM cte
+  where index<5
+ GROUP BY cte.cohort_date, index),
+ 
+ 
+ 
+ /*Buoc 3. Pivot table=> cohort chart*/
+user_cohort AS(
+SELECT cohort_date,
+SUM(CASE WHEN index=1 then cnt else 0 end) as m1,
+SUM(CASE WHEN index=2 then cnt else 0 end) as m2,
+SUM(CASE WHEN index=3 then cnt else 0 end) as m3,
+SUM(CASE WHEN index=4 then cnt else 0 end) as m4 
+FROM cte2
+GROUP BY cohort_date)
+--retention_cohort 
+SELECT cohort_date,
+ROUND(100.00*m1/m1,2)||'%' as m1,
+ROUND(100.00*m2/m1,2)||'%' as m2,
+ROUND(100.00*m3/m1,2)||'%' as m3,
+ROUND(100.00*m4/m1,2)||'%' as m4
+FROM user_cohort
